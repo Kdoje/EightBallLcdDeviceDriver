@@ -1,16 +1,12 @@
 #include <Arduino.h>
-// #include <Adafruit_GFX.h>    // Core graphics library
-// #include <Adafruit_ST7735.h> // ST7735 driver
 #include <SPI.h> // For SPI communication
 #include <Wire.h>
 #include <DFRobot_BMI160.h>
 #include <TFT_eSPI.h>
-
-// #define TFT_CS 5
-// #define TFT_RST 4
-// #define TFT_DC 2
-
-// Adafruit_ST7735 tft = Adafruit_ST7735(TFT_CS, TFT_DC, TFT_RST);
+#include <BLEDevice.h>
+#include <BLEServer.h>
+#include <BLEUtils.h>
+#include <BLE2902.h>
 
 DFRobot_BMI160 imu;
 
@@ -25,6 +21,42 @@ char buff[32];
 const int cw = tft.width()/2;
 const int ch = tft.height()/2;
 const int s = min(cw/4,ch/4);
+
+BLEServer *pServer = nullptr;
+BLECharacteristic *pCharacteristic = nullptr;
+
+bool deviceConnected = false;
+
+// UUIDs for the service and characteristic
+#define bleServerName "BME280_ESP32"
+
+#define SERVICE_UUID        "8c380000-10bd-4fdb-ba21-1922d6cf860d"
+#define CHARACTERISTIC_UUID "8c380002-10bd-4fdb-ba21-1922d6cf860d"
+
+class MyServerCallbacks : public BLEServerCallbacks {
+  void onConnect(BLEServer* pServer) {
+    deviceConnected = true;
+    Serial.println("Device connected");
+  }
+
+  void onDisconnect(BLEServer* pServer) {
+    deviceConnected = false;
+    Serial.println("Device disconnected");
+    pServer->startAdvertising(); // Restart advertising
+  }
+};
+
+// Callback to handle writes to the characteristic
+class MyCallbacks : public BLECharacteristicCallbacks {
+  void onWrite(BLECharacteristic *pCharacteristic) {
+    std::string value = pCharacteristic->getValue();
+    if (value.length() > 0) {
+      Serial.print("Data received: ");
+      Serial.println(value.c_str());
+    }
+  }
+};
+
 
 void renderFrame()
 {
@@ -54,6 +86,7 @@ void renderFrame2()
 void setup()
 {
   Serial.begin(115200);
+  Serial.println("starting");
   // SPI.begin(18, -1, 23, -1); // SCK=18, MISO not used, MOSI=23
   tft.init();
   tft.setRotation(0);
@@ -82,7 +115,7 @@ void setup()
   // Optional: soft reset
   if (imu.softReset() != BMI160_OK)
   {
-    //  Serial.println("BMI160 reset failed!");
+    Serial.println("BMI160 reset failed!");
     while (true)
     {
       delay(1000);
@@ -98,20 +131,40 @@ void setup()
       delay(1000);
     }
   }
-  // renderFrame();
-  //   tft.init();
-  // tft.fillScreen(TFT_BLACK);  
-  // tft.setRotation(0);
+  Serial.println("creating server");
+  // Create BLE Server
+    // Create the BLE Device
+  BLEDevice::init(bleServerName);
+  pServer = BLEDevice::createServer();
+  pServer->setCallbacks(new MyServerCallbacks());
+  Serial.println("server created");
 
-  // tft.setTextFont(1);
-  // tft.setTextSize(2);
-  // tft.setTextColor(TFT_WHITE, TFT_BLACK);
-  // tft.setTextDatum(CC_DATUM);
-  // tft.drawString("Makerguides", ch, cw+s);
+  // Create BLE Service
+  BLEService *pService = pServer->createService(SERVICE_UUID);
 
-  // tft.fillCircle(ch, cw/2+s/2, s/2, TFT_RED);
-  // tft.fillRect(1.5*ch-s, cw/2, s, s, TFT_GREEN);
-  // tft.fillTriangle(ch/2, cw/2, ch/2+s, cw/2, ch/2, cw/2+s, TFT_BLUE);
+  // Create BLE Characteristic
+  pCharacteristic = pService->createCharacteristic(
+                      CHARACTERISTIC_UUID,
+                      BLECharacteristic::PROPERTY_READ |
+                      BLECharacteristic::PROPERTY_WRITE
+                    );
+
+  pCharacteristic->setValue("Hello BLE");
+  pCharacteristic->setCallbacks(new MyCallbacks());
+
+  // Start the service
+  pService->start();
+
+  // Start advertising
+  BLEAdvertising *pAdvertising = BLEDevice::getAdvertising();
+  pAdvertising->addServiceUUID(SERVICE_UUID);
+  pAdvertising->setScanResponse(true);
+  pAdvertising->setMinPreferred(0x06);  // Helps with iOS connections
+  pAdvertising->setMinPreferred(0x12);
+  BLEDevice::startAdvertising();
+
+  Serial.println("BLE server is running and advertising...");
+
 }
 
 void loop()
@@ -124,29 +177,6 @@ void loop()
 
 void old_loop() {
   Serial.println("hi");
-  //  int16_t accelData[3] = {0, 0, 0};
-  // // Fetch only accelerometer data
-  // if (imu.getAccelData(accelData) == BMI160_OK) {
-  //   // Raw data are 16‑bit signed values representing acceleration
-  //   // According to datasheet for ±2g range: sensitivity = 16384 LSB/g :contentReference[oaicite:4]{index=4}
-  //   const float SENSITIVITY_2G = 16384.0f;
-  //   float ax_g = accelData[0] / SENSITIVITY_2G;
-  //   float ay_g = accelData[1] / SENSITIVITY_2G;
-  //   float az_g = accelData[2] / SENSITIVITY_2G;
-
-  //   // Compute overall (vector) acceleration in g
-  //   float magnitude_g = sqrt(ax_g * ax_g + ay_g * ay_g + az_g * az_g);
-
-  //   Serial.printf("Accel (g): X=%.3f, Y=%.3f, Z=%.3f, |a|=%.3f g\n",
-  //                 ax_g, ay_g, az_g, magnitude_g);
-  //   Serial.println(run++);
-
-  //   //tft.printf("Current accel is %.3f", magnitude_g);
-
-  // } else {
-  //   Serial.println("Failed to read accelerometer data.");
-  // }
-  // delay(100);
   int i = 0;
   int rslt;
   int16_t accelGyro[6] = {0};
