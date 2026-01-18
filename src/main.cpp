@@ -14,6 +14,8 @@ static const int8_t I2C_ADDR = 0x68; // Use 0x69 if SA0 pulled high
 TFT_eSPI tft = TFT_eSPI();
 TFT_eSprite bgSprite = TFT_eSprite(&tft);   // Background sprite
 TFT_eSprite textSprite = TFT_eSprite(&tft); // Text sprite
+TFT_eSprite shakeSprite = TFT_eSprite(&tft); // Text sprite
+
 volatile int run = 0;
 
 char buff[32];
@@ -32,6 +34,36 @@ bool deviceConnected = false;
 
 #define SERVICE_UUID        "8c380000-10bd-4fdb-ba21-1922d6cf860d"
 #define CHARACTERISTIC_UUID "8c380002-10bd-4fdb-ba21-1922d6cf860d"
+
+
+void renderFrame(const String &text)
+{
+  // Clear only the text sprite
+  textSprite.fillSprite(TFT_BLUE);  // same color as circle background
+
+  // Set text color and background
+  textSprite.setTextColor(TFT_WHITE, TFT_BLUE);
+
+  // Draw the provided text instead of hardcoded "Ask!"
+  textSprite.drawString(text, 0, 10);  // position relative to sprite
+
+  // Push the text sprite at the circle position (centered)
+  textSprite.pushSprite(30, 60);  // top-left corner of circle is ~24,60
+}
+ 
+void renderShake(const String &text) {
+    // Clear only the text sprite
+  textSprite.fillSprite(TFT_BLACK);  // same color as circle background
+
+  // Set text color and background
+  textSprite.setTextColor(TFT_WHITE, TFT_BLACK);
+
+  // Draw the provided text instead of hardcoded "Ask!"
+  textSprite.drawString(text, 0, 10);  // position relative to sprite
+
+  // Push the text sprite at the circle position (centered)
+  textSprite.pushSprite(30, 90);  // top-left corner of circle is ~24,60
+}
 
 class MyServerCallbacks : public BLEServerCallbacks {
   void onConnect(BLEServer* pServer) {
@@ -53,35 +85,10 @@ class MyCallbacks : public BLECharacteristicCallbacks {
     if (value.length() > 0) {
       Serial.print("Data received: ");
       Serial.println(value.c_str());
+      renderFrame(value.c_str());
     }
   }
 };
-
-
-void renderFrame()
-{
-  // Clear only the text sprite
-  textSprite.fillSprite(TFT_BLUE);  // same color as circle background
-
-  textSprite.setTextColor(TFT_WHITE, TFT_BLUE);
-  textSprite.drawString("Ask!", 0, 10);  // position relative to sprite
-
-  // Push the text sprite at the circle position (centered)
-  textSprite.pushSprite(30, 60);  // top-left corner of circle is ~24,60
-}
-
-void renderFrame2()
-{
-  // Clear only the text sprite
-  textSprite.fillSprite(TFT_BLUE);  // same color as circle background
-
-  textSprite.setTextColor(TFT_WHITE, TFT_BLUE);
-  textSprite.drawString("Now!", 0, 10);  // position relative to sprite
-
-  // Push the text sprite at the circle position (centered)
-  textSprite.pushSprite(30, 60);  // top-left corner of circle is ~24,60
-}
-
 
 void setup()
 {
@@ -107,9 +114,10 @@ void setup()
 
   // Create text sprite (only covers the circle)
   // Keep it slightly larger than text for padding
-  textSprite.createSprite(50, 40);  // width=80, height=40
+  textSprite.createSprite(90, 40);  // width=80, height=40
   textSprite.setTextSize(2);  
-
+  shakeSprite.createSprite(90, 40); 
+  shakeSprite.setTextSize(2);
   // TODO Check if this gets the accel.
   // Wire.begin(21, 22);  // SDA = GPIO21, SCL = GPIO22
   // Optional: soft reset
@@ -164,19 +172,11 @@ void setup()
   BLEDevice::startAdvertising();
 
   Serial.println("BLE server is running and advertising...");
+  renderFrame("Waiting");
 
 }
 
-void loop()
-{  
-  renderFrame();
-  delay(300);
-  renderFrame2();
-  delay(300);
-}
-
-void old_loop() {
-  Serial.println("hi");
+void loop() {
   int i = 0;
   int rslt;
   int16_t accelGyro[6] = {0};
@@ -201,35 +201,11 @@ void old_loop() {
       }
     }
     float magnitude_g = sqrt(accelGyro[3] / 16384.0 * accelGyro[3] / 16384.0 + accelGyro[4] / 16384.0 * accelGyro[4] / 16384.0 + accelGyro[5] / 16384.0 * accelGyro[5] / 16384.0);
-
-    // tft.setCursor(0, 20);
-    // tft.setTextColor(ST77XX_BLACK, ST77XX_WHITE);
-    // sprintf(buff, "accel: %4.3f", magnitude_g);
-    // tft.print(buff);
-
-    // Serial.println();
+    renderShake(String(magnitude_g));
   }
   else
   {
     Serial.println("err");
   }
-  renderFrame();
   delay(200);
 }
-
-// void setup() {
-//   Serial.begin(115200);
-//   Wire.begin(21, 22);
-// }
-
-// void loop() {
-//   Serial.println("Scanning...");
-//   for (int i = 1; i < 127; i++) {
-//     Wire.beginTransmission(0x68);
-//     if (Wire.endTransmission() == 0) {
-//       Serial.print("Found device at 0x");
-//       Serial.println(i, HEX);
-//     }
-//   }
-//   delay(2000);
-// }
